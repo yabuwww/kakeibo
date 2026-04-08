@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>俺の家計簿システム</title>
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#f0f2f5">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* 基本デザイン */
+    body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 20px; background-color: #f0f2f5; color: #333; }
+    .container { max-width: 500px; margin: 0 auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    h2 { text-align: center; color: #2c3e50; margin-top: 0; font-size: 22px; }
+    h3 { color: #555; font-size: 18px; text-align: center; margin-bottom: 10px; }
+    label { display: block; margin-top: 15px; font-weight: bold; font-size: 14px; color: #555; }
+    input, select { width: 100%; padding: 12px; margin-top: 5px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 16px; background-color: #fafafa; }
+    
+    /* ボタンデザイン */
+    button { width: 100%; padding: 15px; margin-top: 25px; background-color: #FF6384; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+    button:hover { background-color: #d9536d; }
+    .btn-income { background-color: #36A2EB; margin-top: 15px; }
+    .btn-income:hover { background-color: #2b88c7; }
+    .btn-close { background-color: #999; margin-top: 10px; }
+    
+    #message { margin-top: 15px; text-align: center; font-weight: bold; font-size: 14px; min-height: 20px; }
+    
+    /* モーダル（ポップアップ）のデザイン */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+    .modal-content { background: white; padding: 25px; border-radius: 12px; width: 90%; max-width: 400px; }
+    
+    /* ダッシュボードエリア */
+    .dashboard { margin-top: 40px; padding-top: 20px; border-top: 2px dashed #eee; }
+    .chart-box { margin-bottom: 40px; }
+    .filter-box { text-align: center; margin-bottom: 15px; }
+    .filter-box select { width: auto; display: inline-block; padding: 8px 15px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>💸 支出の入力</h2>
+    <form id="expenseForm">
+      <label>📅 日付</label><input type="date" id="dateExp" required>
+      <label>📁 大分類</label>
+      <select id="parentExp">
+        <option value="食費">食費</option>
+        <option value="変動費">変動費</option>
+        <option value="固定費">固定費</option>
+      </select>
+      <label>🏷️ 中分類</label><select id="childExp"></select>
+      <label>📝 内容（任意）</label><input type="text" id="memoExp" placeholder="例：スーパー">
+      <label>💴 金額（円）</label><input type="number" id="amountExp" required placeholder="例：500">
+      <label>🧐 評価</label>
+      <select id="ratingExp">
+        <option value="◎">◎ (良い)</option>
+        <option value="◯" selected>◯ (普通)</option>
+        <option value="△">△ (無駄)</option>
+      </select>
+      <button type="submit">支出を記録する</button>
+    </form>
+
+    <button type="button" class="btn-income" onclick="openIncomeModal()">💰 収入を記録する</button>
+    <div id="message"></div>
+
+    <div class="dashboard">
+      <h2>📊 収支ダッシュボード</h2>
+      <div class="chart-box">
+        <h3>月ごとの収入 vs 支出</h3>
+        <canvas id="trendChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>支出の内訳</h3>
+        <div class="filter-box">
+          <select id="monthFilter"><option value="">データ読み込み中...</option></select>
+        </div>
+        <canvas id="expenseChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div id="incomeModal" class="modal">
+    <div class="modal-content">
+      <h2 style="color: #36A2EB;">💰 収入の入力</h2>
+      <form id="incomeForm">
+        <label>📅 日付</label><input type="date" id="dateInc" required>
+        <label>📁 収入元</label>
+        <select id="parentInc">
+          <option value="給与">給与（バイト等）</option>
+          <option value="臨時収入">臨時収入</option>
+          <option value="その他">その他</option>
+        </select>
+        <label>📝 内容（任意）</label><input type="text" id="memoInc" placeholder="例：3月分シフト">
+        <label>💴 金額（円）</label><input type="number" id="amountInc" required placeholder="例：50000">
+        <button type="submit" class="btn-income">収入を記録する</button>
+        <button type="button" class="btn-close" onclick="closeIncomeModal()">キャンセル</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // ★★★ 先ほど取得したGASのURLをここに貼り付けてください ★★★
+    const ENDPOINT = "https://script.google.com/macros/s/AKfycbzyG-PbBxv0Rr7rK537j7QAMBoA0VLCBI4153wWbsf22dk5JUhBMh2QtLderESyl67b/exec";
+
+    // カテゴリ定義
+    const categoryMapExp = {
+      "食費": ["自炊", "外食", "学食"],
+      "変動費": ["日用品", "趣味", "交通費", "医療費", "衣服", "雑費"],
+      "固定費": ["家賃", "電気", "ガス", "水道", "通信費", "サブスク"]
+    };
+
+    const parentExp = document.getElementById('parentExp');
+    const childExp = document.getElementById('childExp');
+    const monthFilter = document.getElementById('monthFilter');
+    
+    let pieChartInstance = null;
+    let barChartInstance = null;
+    let globalData = []; 
+
+    // === 初期化 ===
+    document.getElementById('dateExp').valueAsDate = new Date();
+    document.getElementById('dateInc').valueAsDate = new Date();
+    
+    function updateChildExp() {
+      const children = categoryMapExp[parentExp.value];
+      childExp.innerHTML = ''; 
+      children.forEach(c => childExp.add(new Option(c, c)));
+    }
+    parentExp.addEventListener('change', updateChildExp);
+    updateChildExp(); 
+
+    // === モーダル操作 ===
+    function openIncomeModal() { document.getElementById('incomeModal').style.display = 'flex'; }
+    function closeIncomeModal() { document.getElementById('incomeModal').style.display = 'none'; }
+
+    // === データ送信共通関数 ===
+    function sendData(dataObj) {
+      const msg = document.getElementById('message');
+      msg.textContent = "送信中..."; msg.style.color = "blue";
+      fetch(ENDPOINT, { method: 'POST', body: JSON.stringify(dataObj) })
+      .then(r => r.json())
+      .then(() => {
+        msg.textContent = "✅ 記録しました！"; msg.style.color = "green";
+        document.getElementById('amountExp').value = ""; document.getElementById('amountInc').value = "";
+        document.getElementById('memoExp').value = ""; document.getElementById('memoInc').value = "";
+        closeIncomeModal();
+        fetchAndDrawCharts(); 
+      }).catch(() => { msg.textContent = "❌ エラー発生"; msg.style.color = "red"; });
+    }
+
+    // 支出送信イベント
+    document.getElementById('expenseForm').addEventListener('submit', function(e) {
+      e.preventDefault(); 
+      sendData({
+        type: "支出",
+        date: document.getElementById('dateExp').value,
+        parentCategory: parentExp.value,
+        childCategory: childExp.value,
+        memo: document.getElementById('memoExp').value,
+        amount: document.getElementById('amountExp').value,
+        rating: document.getElementById('ratingExp').value
+      });
+    });
+
+    // 収入送信イベント
+    document.getElementById('incomeForm').addEventListener('submit', function(e) {
+      e.preventDefault(); 
+      sendData({
+        type: "収入",
+        date: document.getElementById('dateInc').value,
+        parentCategory: document.getElementById('parentInc').value,
+        childCategory: "", // 収入は中分類なし
+        memo: document.getElementById('memoInc').value,
+        amount: document.getElementById('amountInc').value,
+        rating: "" // 収入は評価なし
+      });
+    });
+
+    // === グラフ描画 ===
+    function fetchAndDrawCharts() {
+      fetch(ENDPOINT).then(r => r.json()).then(data => {
+        globalData = data;
+        const monthsSet = new Set();
+        data.forEach(row => {
+          if(row['日付']) {
+            const dateStr = String(row['日付']).substring(0, 7); 
+            row.ym = dateStr; 
+            monthsSet.add(dateStr);
+          }
+        });
+
+        const sortedMonths = Array.from(monthsSet).sort().reverse(); 
+        monthFilter.innerHTML = '';
+        sortedMonths.forEach(m => monthFilter.add(new Option(m + " の内訳", m)));
+
+        drawBarChart(sortedMonths.reverse()); 
+        if(sortedMonths.length > 0) {
+          monthFilter.value = sortedMonths[sortedMonths.length - 1]; 
+          drawPieChart(monthFilter.value);
+        }
+      });
+    }
+
+    // ★月ごとの収入 vs 支出（比較棒グラフ）
+    function drawBarChart(monthsAsc) {
+      const monthlyIncome = {};
+      const monthlyExpense = {};
+      monthsAsc.forEach(m => { monthlyIncome[m] = 0; monthlyExpense[m] = 0; });
+
+      globalData.forEach(row => {
+        if(row.ym && row['金額']) {
+          const amt = Number(row['金額']);
+          if(row['収支区分'] === '収入') monthlyIncome[row.ym] += amt;
+          else if(row['収支区分'] === '支出' || !row['収支区分']) monthlyExpense[row.ym] += amt; // 空白は支出扱い
+        }
+      });
+
+      const ctx = document.getElementById('trendChart').getContext('2d');
+      if(barChartInstance) barChartInstance.destroy();
+      barChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: monthsAsc,
+          datasets: [
+            { label: '支出', data: Object.values(monthlyExpense), backgroundColor: '#FF6384' },
+            { label: '収入', data: Object.values(monthlyIncome), backgroundColor: '#36A2EB' }
+          ]
+        },
+        options: { responsive: true }
+      });
+    }
+
+    // 支出の内訳（円グラフ）
+    function drawPieChart(targetMonth) {
+      const aggregated = {};
+      globalData.forEach(row => {
+        if(row.ym === targetMonth && row['大分類'] && (row['収支区分'] === '支出' || !row['収支区分']) && row['金額']) {
+          const cat = row['大分類'];
+          aggregated[cat] = (aggregated[cat] || 0) + Number(row['金額']);
+        }
+      });
+
+      const ctx = document.getElementById('expenseChart').getContext('2d');
+      if(pieChartInstance) pieChartInstance.destroy();
+      pieChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(aggregated),
+          datasets: [{ data: Object.values(aggregated), backgroundColor: ['#FF6384', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'] }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+      });
+    }
+
+    monthFilter.addEventListener('change', function() { drawPieChart(this.value); });
+    fetchAndDrawCharts();
+  </script>
+</body>
+</html>
