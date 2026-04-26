@@ -195,25 +195,37 @@
       fetch(ENDPOINT).then(r => r.json()).then(data => {
         globalData = data;
         const monthsSet = new Set();
-        data.forEach(row => {
-          if(row['日付']) {
-            const dateStr = String(row['日付']).substring(0, 7); 
-            row.ym = dateStr; 
-            monthsSet.add(dateStr);
-          }
-        });
-
+        // 1. 全データに「年月(YYYY-MM)」をセットする集計処理（正しい）
+        data.forEach(row => { if(row['日付']) { const dateStr = String(row['日付']).substring(0, 7); row.ym = dateStr; monthsSet.add(dateStr); } });
+        
+        // 2. 月プルダウン（プルダウン）の更新処理（正しい）
         const sortedMonths = Array.from(monthsSet).sort().reverse(); 
         monthFilter.innerHTML = '';
         sortedMonths.forEach(m => monthFilter.add(new Option(m + " の内訳", m)));
 
+        // 3. 棒グラフの描画処理（全データなので毎回更新してOK）
         drawBarChart(sortedMonths.reverse()); 
+
         if(sortedMonths.length > 0) {
-          monthFilter.value = sortedMonths[sortedMonths.length - 1]; 
+          // ▼▼▼ 【修正】 月のセットと円グラフの呼び出しロジックを修正 ▼▼▼
+          // もし月プルダウンがまだセットされていない（ページ読み込み時の最初の1回）場合は最新月をセット
+          if(!monthFilter.value) {
+            monthFilter.value = sortedMonths[sortedMonths.length - 1]; 
+          }
+          // 現在選択されている月（monthFilter.value）を使って円グラフを描画
+          // これにより、データの送信成功時には現在選択されている月のグラフが更新される。
           drawPieChart(monthFilter.value);
+          // ▲▲▲ 【修正】 ここまで ▲▲▲
         }
       });
     }
+
+    // ▼▼▼ 【追加】 月プルダウンのイベントリスナーを追加 ▼▼▼
+    // プルダウンから別の月が選択された瞬間に円グラフだけを更新する命令を追加します。
+    monthFilter.addEventListener('change', function() {
+      drawPieChart(this.value);
+    });
+    // ▲▲▲ 【追加】 ここまで ▲▲▲
 
     // ★月ごとの収入 vs 支出（比較棒グラフ）
     function drawBarChart(monthsAsc) {
@@ -244,62 +256,71 @@
       });
     }
 
-    // 支出の内訳（円グラフ）
-    // index.html 247行目付近 〜 326行目付近
-
     // 支出の内訳（2層表示円グラフ＝サンバーストチャート）
     function drawPieChart(targetMonth) {
-      const aggregatedParent = {}; // 大分類（Parent）用集計
-      const aggregatedChild = {};  // 中分類（Child）用集計
+      const aggregatedParent = {}; 
+      const aggregatedChild = {};  
 
-      // 1. データ集計の2層化ロジック
+      // 1. データ集計の2層化ロジック（ここは変更なし、正しい）
       globalData.forEach(row => {
-        // 支出データ、指定月、大分類、金額が存在する場合
         if(row.ym === targetMonth && row['大分類'] && (row['収支区分'] === '支出' || !row['収支区分']) && row['金額']) {
           const parent = row['大分類'];
-          const child = row['中分類'] || 'その他'; // 中分類がない場合は「その他」
+          const child = row['中分類'] || 'その他'; 
           const amount = Number(row['金額']);
-
-          // 大分類の集計
           aggregatedParent[parent] = (aggregatedParent[parent] || 0) + amount;
-
-          // 大分類ごとの中分類の集計ロジック
           if (!aggregatedChild[parent]) aggregatedChild[parent] = {};
           aggregatedChild[parent][child] = (aggregatedChild[parent][child] || 0) + amount;
         }
       });
 
-      // 2. Chart.jsに渡すためのデータ配列を組み立てるロジック（並び順を制御する）
+      // 2. Chart.jsに渡すためのデータ配列を組み立てるロジック（【大幅修正】）
       const parentLabels = [];
       const parentData = [];
-      const childLabels = [];
+      const parentColors = [];
+      
       const childData = [];
-      const parentColors = ['#FF6384', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']; // 大分類用ベースカラーパレット
+      const childColors = [];
+      
+      // 大分類用ベースカラーパレット
+      const baseColors = ['#FF6384', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']; 
 
       // 大分類ごとにループ
       Object.keys(aggregatedParent).forEach((parent, index) => {
         parentLabels.push(parent);
         parentData.push(aggregatedParent[parent]);
 
+        // 大分類の色（ベースカラー）
+        const baseColor = baseColors[index % baseColors.length];
+        parentColors.push(baseColor); // datasets[0]の色配列に追加
+
         // その大分類の中分類をループ
         const children = aggregatedChild[parent];
-        Object.keys(children).forEach((child) => {
-          childLabels.push(child);
-          childData.push(children[child]);
+        Object.keys(children).forEach((child, childIndex) => {
+          // ▼▼▼ 【修正】 内側の凡例は labels に追加しない（ツールチップだけで表示する） ▼▼▼
+          // ▲▲▲ 【修正】 ここまで ▲▲▲
+          
+          childData.push({
+            label: `${parent}: ${child}`, // ツールチップ表示用に大分類名も付与
+            value: children[child]
+          });
+          
+          // ▼▼▼ 【修正】 カラーパレットの工夫：大分類と系統を合わせ、明度だけを変える ▼▼▼
+          // Chart.jsには明度を変える簡単な方法がないため、簡易的に少し白を混ぜた色を作成
+          const lightenedColor = baseColor + 'CC'; // 'CC' (80%透過) を付与して少し薄くする
+          childColors.push(lightenedColor);
+          // ▲▲▲ 【修正】 ここまで ▲▲▲
         });
       });
       
-      // 中分類用カラーパレット（簡略化して、Chart.jsの標準的なカラーパレットを適用する）
-      const childColors = ['#FF8A9F', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#FF8C00', '#20B2AA']; // 中分類用（大分類と系統を合わせるのは難しい）
-
       const ctx = document.getElementById('expenseChart').getContext('2d');
       if(pieChartInstance) pieChartInstance.destroy();
       
       pieChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: {
-          // 4. データセットの構築（内側がdatasets[1]で中分類、外側がdatasets[0]で大分類を表示する）
-          labels: parentLabels.concat(childLabels), // 凡例用（外側と内側を結合）
+          // ▼▼▼ 【修正】 凡例（labels）には外側（大分類）だけを渡す ▼▼▼
+          labels: parentLabels, 
+          // ▲▲▲ 【修正】 ここまで ▲▲▲
           datasets: [
             // datasets[0]: 外側（大分類）
             {
@@ -308,12 +329,12 @@
               backgroundColor: parentColors,
               borderWidth: 1,
               hoverBorderWidth: 2,
-              weight: 2 // アークの幅（太さ）の比重
+              weight: 2 
             },
             // datasets[1]: 内側（中分類）
             {
               label: '中分類',
-              data: childData,
+              data: childData.map(d => d.value), // 値だけの配列に変換して渡す
               backgroundColor: childColors,
               borderWidth: 1,
               hoverBorderWidth: 2,
@@ -327,22 +348,31 @@
             legend: {
               position: 'bottom',
               labels: {
-                // 外側・内側両方の凡例が出ているので、両方表示する。
+                // ▼▼▼ 【修正】 凡例は大分類のみ表示（フィルター不要） ▼▼▼
                 filter: function(legendItem, data) {
                   return true;
                 }
+                // ▲▲▲ 【修正】 ここまで ▲▲▲
               }
             },
             tooltip: {
               callbacks: {
-                // ツールチップに表示する内容をカスタマイズ（金額だけでなく割合も表示）
+                // ▼▼▼ 【修正】 ツールチップ表示を修正（datasets[1]の中分類データを表示する） ▼▼▼
                 label: function(context) {
-                  const dataset = context.dataset;
-                  const value = dataset.data[context.dataIndex];
-                  const total = dataset.data.reduce((a, b) => a + b, 0);
+                  const datasetIndex = context.datasetIndex;
+                  const dataIndex = context.dataIndex;
+                  const value = context.dataset.data[dataIndex];
+                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
                   const percentage = ((value / total) * 100).toFixed(1);
-                  return `${context.label}: ${value.toLocaleString()}円 (${percentage}%)`;
+
+                  let label = context.label;
+                  if (datasetIndex === 1) {
+                    // 内側（中分類）の場合は、drawPieChartで構築したlabelを使う
+                    label = childData[dataIndex].label;
+                  }
+                  return `${label}: ${value.toLocaleString()}円 (${percentage}%)`;
                 }
+                // ▲▲▲ 【修正】 ここまで ▲▲▲
               }
             }
           },
@@ -350,6 +380,7 @@
         }
       });
     }
+    fetchAndDrawCharts();
   </script>
 </body>
 </html>
