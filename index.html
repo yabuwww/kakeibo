@@ -12,6 +12,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     /* 基本デザイン */
     body { font-family: 'Helvetica Neue', Arial, sans-serif; padding: 20px; background-color: #f0f2f5; color: #333; }
@@ -39,6 +40,15 @@
     .chart-box { margin-bottom: 40px; }
     .filter-box { text-align: center; margin-bottom: 15px; }
     .filter-box select { width: auto; display: inline-block; padding: 8px 15px; font-weight: bold; }
+
+    /* ▼▼▼ ここから履歴表示用のスタイルを追加 ▼▼▼ */
+    .history-container { margin-top: 40px; padding-top: 20px; border-top: 2px dashed #eee; }
+    #historyTable { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px; table-layout: fixed; }
+    #historyTable th, #historyTable td { border: 1px solid #eee; padding: 10px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #historyTable th { background-color: #f8f9fa; color: #555; }
+    /* テーブル全体をスマホ用にスクロール可能にする */
+    .history-scroll { overflow-x: auto; width: 100%; }
+    /* ▲▲▲ ここまで追加 ▲▲▲ */
   </style>
 </head>
 <body>
@@ -235,29 +245,111 @@
     }
 
     // 支出の内訳（円グラフ）
+    // index.html 247行目付近 〜 326行目付近
+
+    // 支出の内訳（2層表示円グラフ＝サンバーストチャート）
     function drawPieChart(targetMonth) {
-      const aggregated = {};
+      const aggregatedParent = {}; // 大分類（Parent）用集計
+      const aggregatedChild = {};  // 中分類（Child）用集計
+
+      // 1. データ集計の2層化ロジック
       globalData.forEach(row => {
+        // 支出データ、指定月、大分類、金額が存在する場合
         if(row.ym === targetMonth && row['大分類'] && (row['収支区分'] === '支出' || !row['収支区分']) && row['金額']) {
-          const cat = row['大分類'];
-          aggregated[cat] = (aggregated[cat] || 0) + Number(row['金額']);
+          const parent = row['大分類'];
+          const child = row['中分類'] || 'その他'; // 中分類がない場合は「その他」
+          const amount = Number(row['金額']);
+
+          // 大分類の集計
+          aggregatedParent[parent] = (aggregatedParent[parent] || 0) + amount;
+
+          // 大分類ごとの中分類の集計ロジック
+          if (!aggregatedChild[parent]) aggregatedChild[parent] = {};
+          aggregatedChild[parent][child] = (aggregatedChild[parent][child] || 0) + amount;
         }
       });
 
+      // 2. Chart.jsに渡すためのデータ配列を組み立てるロジック（並び順を制御する）
+      const parentLabels = [];
+      const parentData = [];
+      const childLabels = [];
+      const childData = [];
+      const parentColors = ['#FF6384', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40']; // 大分類用ベースカラーパレット
+
+      // 大分類ごとにループ
+      Object.keys(aggregatedParent).forEach((parent, index) => {
+        parentLabels.push(parent);
+        parentData.push(aggregatedParent[parent]);
+
+        // その大分類の中分類をループ
+        const children = aggregatedChild[parent];
+        Object.keys(children).forEach((child) => {
+          childLabels.push(child);
+          childData.push(children[child]);
+        });
+      });
+      
+      // 中分類用カラーパレット（簡略化して、Chart.jsの標準的なカラーパレットを適用する）
+      const childColors = ['#FF8A9F', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40', '#FF8C00', '#20B2AA']; // 中分類用（大分類と系統を合わせるのは難しい）
+
       const ctx = document.getElementById('expenseChart').getContext('2d');
       if(pieChartInstance) pieChartInstance.destroy();
+      
       pieChartInstance = new Chart(ctx, {
         type: 'doughnut',
         data: {
-          labels: Object.keys(aggregated),
-          datasets: [{ data: Object.values(aggregated), backgroundColor: ['#FF6384', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'] }]
+          // 4. データセットの構築（内側がdatasets[1]で中分類、外側がdatasets[0]で大分類を表示する）
+          labels: parentLabels.concat(childLabels), // 凡例用（外側と内側を結合）
+          datasets: [
+            // datasets[0]: 外側（大分類）
+            {
+              label: '大分類',
+              data: parentData,
+              backgroundColor: parentColors,
+              borderWidth: 1,
+              hoverBorderWidth: 2,
+              weight: 2 // アークの幅（太さ）の比重
+            },
+            // datasets[1]: 内側（中分類）
+            {
+              label: '中分類',
+              data: childData,
+              backgroundColor: childColors,
+              borderWidth: 1,
+              hoverBorderWidth: 2,
+              weight: 3 // 内側を少し太くする
+            }
+          ]
         },
-        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                // 外側・内側両方の凡例が出ているので、両方表示する。
+                filter: function(legendItem, data) {
+                  return true;
+                }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                // ツールチップに表示する内容をカスタマイズ（金額だけでなく割合も表示）
+                label: function(context) {
+                  const dataset = context.dataset;
+                  const value = dataset.data[context.dataIndex];
+                  const total = dataset.data.reduce((a, b) => a + b, 0);
+                  const percentage = ((value / total) * 100).toFixed(1);
+                  return `${context.label}: ${value.toLocaleString()}円 (${percentage}%)`;
+                }
+              }
+            }
+          },
+          cutout: '20%' // 中央の穴の大きさ
+        }
       });
     }
-
-    monthFilter.addEventListener('change', function() { drawPieChart(this.value); });
-    fetchAndDrawCharts();
   </script>
 </body>
 </html>
