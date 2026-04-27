@@ -112,6 +112,26 @@
     </div>
   </div>
 
+  <div id="detailModal" class="modal">
+    <div class="modal-content" style="max-width: 90%; width: 500px;">
+      <h2 id="detailModalTitle" style="color: #2c3e50; font-size: 18px; text-align: center; margin-bottom: 15px;">詳細データ</h2>
+      <div class="history-scroll" style="max-height: 50vh; overflow-y: auto;">
+        <table id="detailTable" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <thead style="position: sticky; top: 0; background: white; box-shadow: 0 2px 2px -1px rgba(0,0,0,0.1);">
+            <tr>
+              <th style="padding: 10px; border-bottom: 1px solid #ccc;">日付</th>
+              <th style="padding: 10px; border-bottom: 1px solid #ccc;">分類</th>
+              <th style="padding: 10px; border-bottom: 1px solid #ccc;">内容</th>
+              <th style="padding: 10px; border-bottom: 1px solid #ccc;">金額</th>
+            </tr>
+          </thead>
+          <tbody>
+            </tbody>
+        </table>
+      </div>
+      <button type="button" class="btn-close" onclick="closeDetailModal()">閉じる</button>
+    </div>
+  </div>
   <script>
     // ★★★ 先ほど取得したGASのURLをここに貼り付けてください ★★★
     const ENDPOINT = "https://script.google.com/macros/s/AKfycbzyG-PbBxv0Rr7rK537j7QAMBoA0VLCBI4153wWbsf22dk5JUhBMh2QtLderESyl67b/exec";
@@ -335,6 +355,9 @@
             {
               label: '中分類',
               data: childData.map(d => d.value), // 値だけの配列に変換して渡す
+              // ▼▼▼ 【追加】 独自のラベル配列を渡しておく（あとでクリック時に使うため） ▼▼▼
+              customLabels: childData.map(d => d.label), 
+              // ▲▲▲ 【追加】 ここまで ▲▲▲
               backgroundColor: childColors,
               borderWidth: 1,
               hoverBorderWidth: 2,
@@ -344,6 +367,27 @@
         },
         options: {
           responsive: true,
+          // ▼▼▼ 【追加】 グラフをタッチした時のイベント ▼▼▼
+          onClick: (event, elements, chart) => {
+            // 要素（アーク）がクリックされた場合
+            if (elements.length > 0) {
+              const el = elements[0];
+              const datasetIndex = el.datasetIndex; // 0=大分類, 1=中分類
+              const dataIndex = el.index;
+
+              if (datasetIndex === 1) { 
+                // 内側（中分類）をタッチした時
+                const labelStr = chart.data.datasets[1].customLabels[dataIndex]; // 例: "食費: 外食"
+                const [parentStr, childStr] = labelStr.split(': '); // ":" で分割
+                showDetailModal(targetMonth, parentStr, childStr);
+              } else if (datasetIndex === 0) { 
+                // 外側（大分類）をタッチした時
+                const parentStr = chart.data.labels[dataIndex]; // 例: "食費"
+                showDetailModal(targetMonth, parentStr, null); // childはnullにする
+              }
+            }
+          },
+          // ▲▲▲ 【追加】 ここまで ▲▲▲
           plugins: {
             legend: {
               position: 'bottom',
@@ -381,6 +425,55 @@
       });
     }
     fetchAndDrawCharts();
+
+    // ▼▼▼ 【追加】 ドリルダウン（詳細表示）用のロジック ▼▼▼
+    function openDetailModal() { document.getElementById('detailModal').style.display = 'flex'; }
+    function closeDetailModal() { document.getElementById('detailModal').style.display = 'none'; }
+
+    // month="2026-04", parentCategory="食費", childCategory="外食" のように受け取る
+    function showDetailModal(month, parentCategory, childCategory) {
+      const titleEl = document.getElementById('detailModalTitle');
+      // タイトルの出し分け（中分類をクリックしたか、大分類をクリックしたか）
+      if (childCategory) {
+        titleEl.textContent = `${month} 【${parentCategory} : ${childCategory}】 の履歴`;
+      } else {
+        titleEl.textContent = `${month} 【${parentCategory}全体】 の履歴`;
+      }
+
+      // 全データ（globalData）から、条件に合うものだけをフィルタリング（抽出）する
+      const filteredData = globalData.filter(row => {
+        const isMatchMonth = row.ym === month;
+        const isMatchParent = row['大分類'] === parentCategory;
+        // childCategoryが指定されている時だけ中分類も判定。指定がなければ大分類だけで判定。
+        const isMatchChild = childCategory ? (row['中分類'] || 'その他') === childCategory : true;
+        const isExpense = (row['収支区分'] === '支出' || !row['収支区分']);
+        
+        return isMatchMonth && isMatchParent && isMatchChild && isExpense;
+      });
+
+      // テーブルに抽出したデータを流し込む
+      const tbody = document.querySelector('#detailTable tbody');
+      tbody.innerHTML = '';
+      
+      if(filteredData.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 15px;">データがありません</td></tr>';
+      } else {
+        // 新しい日付順に並べ替えて表示
+        filteredData.slice().reverse().forEach(row => {
+          const dateStr = String(row['日付']).substring(5); // "04-20" のように月日だけにする
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${dateStr}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center; font-size: 12px;">${row['中分類'] || ''}<br>${row['評価'] || ''}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: left;">${row['内容'] || ''}</td>
+            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; color: #FF6384;">${Number(row['金額']).toLocaleString()}円</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+      openDetailModal();
+    }
+    // ▲▲▲ 【追加】 ここまで ▲▲▲
   </script>
 </body>
 </html>
