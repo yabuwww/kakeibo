@@ -132,6 +132,24 @@
       <button type="button" class="btn-close" onclick="closeDetailModal()">閉じる</button>
     </div>
   </div>
+
+  <div class="chart-box">
+        <h3>月ごとの収入 vs 支出</h3>
+        <canvas id="trendChart"></canvas>
+      </div>
+
+      <div class="chart-box">
+        <h3>カテゴリー別推移（支出）</h3>
+        <div class="filter-box" style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+          <select id="trendParentFilter" style="padding: 8px; font-size: 14px;">
+            <option value="">大分類を選択</option>
+          </select>
+          <select id="trendChildFilter" style="padding: 8px; font-size: 14px;" disabled>
+            <option value="">中分類を選択（全体）</option>
+          </select>
+        </div>
+        <canvas id="categoryTrendChart"></canvas>
+      </div>
   <script>
     // ★★★ 先ほど取得したGASのURLをここに貼り付けてください ★★★
     const ENDPOINT = "https://script.google.com/macros/s/AKfycbzyG-PbBxv0Rr7rK537j7QAMBoA0VLCBI4153wWbsf22dk5JUhBMh2QtLderESyl67b/exec";
