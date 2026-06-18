@@ -134,13 +134,7 @@
           <h3>
             月ごとの収入 vs 支出
           </h3>
-          <div id="barChartScrollContainer" style="overflow-x: auto; border: 1px solid #eee; border-radius: 8px;">
-            <div style="padding: 10px; display: inline-block; min-width: 100%;">
-              <canvas id="trendChart" style="display: block; margin-bottom: 15px;">
-              </canvas>
-              <div id="monthlyDetailContainer" style="display: flex; gap: 20px; flex-wrap: wrap;">
-              </div>
-            </div>
+          <div id="barChartScrollContainer" style="border: 1px solid #eee; border-radius: 8px; width: 100%; overflow-x: auto; overflow-y: hidden; display: flex; gap: 15px; padding: 10px; min-height: auto;">
           </div>
         </div>
         <div class="chart-box">
@@ -580,7 +574,7 @@
         });
         // ▲▲▲ 【追加】 ここまで ▲▲▲
 
-        // ★月ごとの収入 vs 支出（比較棒グラフ）
+        // ★月ごとの収入 vs 支出（月別グリッドレイアウト）
         function drawBarChart(monthsAsc) {
           const monthlyIncome = {};
           const monthlyExpense = {};
@@ -590,78 +584,108 @@
             if(row.ym && row['金額']) {
               const amt = Number(row['金額']);
               if(row['収支区分'] === '収入') monthlyIncome[row.ym] += amt;
-              else if(row['収支区分'] === '支出' || !row['収支区分']) monthlyExpense[row.ym] += amt; // 空白は支出扱い
+              else if(row['収支区分'] === '支出' || !row['収支区分']) monthlyExpense[row.ym] += amt;
             }
           });
 
-          // 棒グラフの幅を月の数に応じて調整
-          const monthCount = monthsAsc.length;
-          const chartWidth = Math.max(600, monthCount * 150); // 最小600px、月あたり150px
+          const container = document.getElementById('barChartScrollContainer');
+          container.innerHTML = '';
           
-          const scrollContainer = document.querySelector('#barChartScrollContainer > div');
-          const canvas = document.getElementById('trendChart');
-          scrollContainer.style.minWidth = chartWidth + 'px';
-          canvas.style.minWidth = chartWidth + 'px';
-          canvas.width = chartWidth;
-          canvas.height = 300;
-
-          const ctx = canvas.getContext('2d');
-          if(barChartInstance) barChartInstance.destroy();
-          barChartInstance = new Chart(ctx, {
-            type: 'bar',
-            data: {
-              labels: monthsAsc,
-              datasets: [
-                { label: '支出', data: Object.values(monthlyExpense), backgroundColor: '#FF6384' },
-                { label: '収入', data: Object.values(monthlyIncome), backgroundColor: '#36A2EB' }
-              ]
-            },
-            options: { 
-              responsive: false,
-              maintainAspectRatio: false
-            }
-          });
-
-          // ▼▼▼ 【修正】 月ごとのテーブルを横に並べる ▼▼▼
-          const monthlyDetailContainer = document.getElementById('monthlyDetailContainer');
-          monthlyDetailContainer.innerHTML = '';
-          
-          monthsAsc.forEach(m => {
-            const income = monthlyIncome[m] || 0;
-            const expense = monthlyExpense[m] || 0;
+          monthsAsc.forEach(month => {
+            const income = monthlyIncome[month] || 0;
+            const expense = monthlyExpense[month] || 0;
             const balance = income - expense;
             const balanceColor = balance >= 0 ? '#36A2EB' : '#FF6384';
             const balanceSign = balance >= 0 ? '+' : '';
             
+            // 月ごとのセクションを作成
+            const section = document.createElement('div');
+            section.style.border = '1px solid #eee';
+            section.style.borderRadius = '8px';
+            section.style.padding = '10px';
+            section.style.backgroundColor = '#f9f9f9';
+            section.style.display = 'flex';
+            section.style.flexDirection = 'column';
+            section.style.gap = '8px';
+            section.style.width = '300px';
+            section.style.flexShrink = '0';
+            
+            // グラフ用のキャンバスを作成
+            const canvas = document.createElement('canvas');
+            canvas.style.height = '140px';
+            canvas.style.width = '100%';
+            canvas.style.display = 'block';
+            
+            // 月の見出し
+            const heading = document.createElement('h4');
+            heading.textContent = month;
+            heading.style.margin = '0 0 5px 0';
+            heading.style.textAlign = 'center';
+            heading.style.color = '#555';
+            heading.style.fontSize = '15px';
+            heading.style.fontWeight = 'bold';
+            
+            // グラフコンテナ
+            const chartContainer = document.createElement('div');
+            chartContainer.style.position = 'relative';
+            chartContainer.style.height = '180px';
+            chartContainer.style.width = '100%';
+            chartContainer.appendChild(heading);
+            chartContainer.appendChild(canvas);
+            
+            // カード情報
             const card = document.createElement('div');
-            card.style.minWidth = '140px';
-            card.style.marginBottom = '10px';
             card.innerHTML = `
-              <div style="border: 1px solid #eee; border-radius: 6px; padding: 12px; background: #f9f9f9;">
-                <div style="text-align: center; font-weight: bold; margin-bottom: 10px; font-size: 14px;">${m}</div>
-                <div style="font-size: 12px; margin-bottom: 8px;">
-                  <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                    <span>収入:</span>
-                    <span style="font-weight: bold;">${income.toLocaleString()}円</span>
-                  </div>
-                  <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                    <span>支出:</span>
-                    <span style="font-weight: bold;">${expense.toLocaleString()}円</span>
-                  </div>
-                  <div style="display: flex; justify-content: space-between; padding-top: 6px; border-top: 1px solid #ddd;">
-                    <span>収支:</span>
-                    <span style="font-weight: bold; color: ${balanceColor};">${balanceSign}${balance.toLocaleString()}円</span>
-                  </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 11px; text-align: center;">
+                <div>
+                  <div style="color: #666; margin-bottom: 3px; font-size: 10px;">収入</div>
+                  <div style="font-weight: bold; color: #36A2EB; font-size: 13px;">${income.toLocaleString()}円</div>
+                </div>
+                <div style="border-left: 1px solid #ddd; border-right: 1px solid #ddd;">
+                  <div style="color: #666; margin-bottom: 3px; font-size: 10px;">支出</div>
+                  <div style="font-weight: bold; color: #FF6384; font-size: 13px;">${expense.toLocaleString()}円</div>
+                </div>
+                <div>
+                  <div style="color: #666; margin-bottom: 3px; font-size: 10px;">収支</div>
+                  <div style="font-weight: bold; color: ${balanceColor}; font-size: 13px;">${balanceSign}${balance.toLocaleString()}円</div>
                 </div>
               </div>
             `;
-            monthlyDetailContainer.appendChild(card);
+            
+            section.appendChild(chartContainer);
+            section.appendChild(card);
+            container.appendChild(section);
+            
+            // 月ごとのグラフを描画
+            const ctx = canvas.getContext('2d');
+            new Chart(ctx, {
+              type: 'bar',
+              data: {
+                labels: ['収入', '支出'],
+                datasets: [
+                  { label: month, data: [income, expense], backgroundColor: ['#36A2EB', '#FF6384'] }
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                scales: {
+                  y: {
+                    beginAtZero: true,
+                    ticks: { callback: v => v.toLocaleString() }
+                  }
+                },
+                plugins: {
+                  legend: { display: false },
+                  tooltip: {
+                    callbacks: {
+                      label: ctx => `${ctx.formattedValue}円`
+                    }
+                  }
+                }
+              }
+            });
           });
-          // ▲▲▲ 【修正】 ここまで ▲▲▲
-
-          // ▼▼▼ 【修正】 スクロール同期ロジック削除 - 一括りのコンテナで管理 ▼▼▼
-          // スクロール同期は不要になったため削除
-          // ▲▲▲ 【修正】 ここまで ▲▲▲
         }
 
         // 支出の内訳（2層表示円グラフ＝サンバーストチャート）
