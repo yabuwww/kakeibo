@@ -135,14 +135,10 @@
             月ごとの収入 vs 支出
           </h3>
           <div id="barChartScrollContainer" style="overflow-x: auto; border: 1px solid #eee; border-radius: 8px;">
-            <div style="display: flex; flex-direction: column; gap: 0;">
-              <div style="display: inline-block; padding: 10px;">
-                <canvas id="trendChart">
-                </canvas>
-              </div>
-              <div style="display: inline-block; padding: 10px;">
-                <div id="monthlyDetailContainer" style="display: flex; gap: 20px;">
-                </div>
+            <div style="padding: 10px; display: inline-block; min-width: 100%;">
+              <canvas id="trendChart" style="display: block; margin-bottom: 15px;">
+              </canvas>
+              <div id="monthlyDetailContainer" style="display: flex; gap: 20px; flex-wrap: wrap;">
               </div>
             </div>
           </div>
@@ -602,8 +598,9 @@
           const monthCount = monthsAsc.length;
           const chartWidth = Math.max(600, monthCount * 150); // 最小600px、月あたり150px
           
-          const canvasContainer = document.querySelector('#barChartScroller div');
+          const scrollContainer = document.querySelector('#barChartScrollContainer > div');
           const canvas = document.getElementById('trendChart');
+          scrollContainer.style.minWidth = chartWidth + 'px';
           canvas.style.minWidth = chartWidth + 'px';
           canvas.width = chartWidth;
           canvas.height = 300;
